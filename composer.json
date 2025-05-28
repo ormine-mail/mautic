@@ -22,7 +22,8 @@
     },
   "require": {
     "composer/installers": "^1.11",
-    "mautic/core-lib": "^5.0"
+    "mautic/core-lib": "^5.0",
+    "sentry/sentry": "^4.11"
   },
   "require-dev": {
     "codeception/codeception": "^5.1",
