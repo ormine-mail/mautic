@@ -10,18 +10,16 @@ use Symfony\Component\HttpFoundation\Request;
 class EmailOpenEvent extends CommonEvent
 {
     private ?Email $email;
+    private bool $doNotRecordHit = false;
 
-    /**
-     * @param Request $request
-     * @param bool    $firstTime
-     */
     public function __construct(
-        Stat $stat,
-        private $request,
-        private $firstTime = false
-    ) {
-        $this->entity    = $stat;
-        $this->email     = $stat->getEmail();
+        Stat                     $stat,
+        private readonly Request $request,
+        private bool             $firstTime = false
+    )
+    {
+        $this->entity = $stat;
+        $this->email  = $stat->getEmail();
     }
 
     /**
@@ -61,4 +59,15 @@ class EmailOpenEvent extends CommonEvent
     {
         return $this->firstTime;
     }
+
+    public function isDoNotRecordHit(): bool
+    {
+        return $this->doNotRecordHit;
+    }
+
+    public function setDoNotRecordHit(bool $doNotRecordHit = true): void
+    {
+        $this->doNotRecordHit = $doNotRecordHit;
+    }
+
 }
