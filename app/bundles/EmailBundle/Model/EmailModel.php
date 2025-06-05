@@ -446,7 +446,7 @@ class EmailModel extends FormModel implements AjaxLookupModelInterface, GlobalSe
         }
 
         // Only up counts if associated with both an email and lead
-        if ($firstTime && $email && $lead) {
+        if ($firstTime && $email && $lead && !($event?->isDoNotRecordHit() ?? false)) {
             try {
                 $this->getRepository()->incrementRead($email->getId(), $stat->getId(), $email->isVariant());
             } catch (\Exception $exception) {
