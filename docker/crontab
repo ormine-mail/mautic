@@ -1,0 +1,6 @@
+* * * * * cd /app && php bin/console mautic:segments:update > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && php bin/console mautic:campaigns:rebuild > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && php bin/console mautic:campaigns:trigger > /proc/1/fd/1 2>/proc/1/fd/2
+0 * * * * cd /app && php bin/console mautic:emails:send > /proc/1/fd/1 2>/proc/1/fd/2
+0 4 * * * cd /app && php bin/console mautic:maintenance:cleanup --days-old=365 > /proc/1/fd/1 2>/proc/1/fd/2
+0 5 * * * cd /app && php bin/console mautic:import > /proc/1/fd/1 2>/proc/1/fd/2
