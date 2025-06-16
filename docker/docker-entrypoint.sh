@@ -156,6 +156,7 @@ fix_permissions() {
   # Create directories if they don't exist
   mkdir -p /app/var/cache /app/var/logs /app/var/tmp /app/var/spool /app/media/files /app/media/images
 
+  chmod 664 /app/config/local.php
   # Only fix permissions if they're not already set correctly
   current_owner=$(stat -c "%U:%G" /app/var 2>/dev/null || echo "none:none")
   if [ "$current_owner" != "www-data:www-data" ]; then
