@@ -92,7 +92,7 @@ install_mautic() {
       fi
 
       # Use Mautic's installer with all required database parameters
-      echo "Installing Mautic database and default data..."
+      echo "Installing Mautic database and default data, site url: $SITE_URL"
       php bin/console mautic:install "$SITE_URL" --force \
         --db_driver="$DB_DRIVER" \
         --db_host="$DB_HOST" \
@@ -234,6 +234,8 @@ configure_php() {
 
 configure_php
 
+cd /app
+
 # Wait for database to be ready
 if ! wait_for_database; then
   echo "Error: Database connection failed. Check your database settings."
@@ -242,7 +244,7 @@ fi
 
 ## First install Composer dependencies for connected plugins
 echo "Installing Composer dependencies..."
-composer install --no-dev --optimize-autoloader
+composer install --no-dev --optimize-autoloader --no-scripts
 
 #
 ## Then install NPM dependencies
@@ -255,18 +257,23 @@ composer install --no-dev --optimize-autoloader
 # Check if Mautic is installed
 if is_mautic_installed; then
   echo "Mautic is already installed, running migrations..."
-  run_migrations
 else
   echo "Mautic is not installed, running initial installation..."
   install_mautic
 fi
 
+run_migrations
+warm_cache
+
+echo "Installing Mautic plugins..."
+php bin/console mautic:plugins:install
+
 # Generate Mautic assets (after all dependencies are installed)
-echo "Generating Mautic assets..."
-bin/console mautic:assets:generate
+#echo "Generating Mautic assets..."
+#bin/console mautic:assets:generate
 
 # Warm up the cache
-warm_cache
+
 
 # Ensure correct permissions
 fix_permissions
@@ -286,13 +293,13 @@ if [ "$CONTAINER_ROLE" = "worker" ]; then
     echo "Starting supervisor for worker role..."
     exec supervisord -n
 elif [ "$CONTAINER_ROLE" = "web" ]; then
-    echo "Starting FPM server..."
-    exec docker-php-entrypoint "$@"
-
+    echo "Starting web and FPM servers..."
+    service nginx start
+    # Start PHP-FPM in foreground
+    exec php-fpm -F
 elif [ "$CONTAINER_ROLE" = "cron" ]; then
     echo "Starting cron instance in foreground..."
     exec crond -f -l 8
-
 else
     echo "Unknown CONTAINER_ROLE: $CONTAINER_ROLE"
     echo "Expected values: web, worker, cron"

@@ -1,10 +1,6 @@
-FROM php:8.3-fpm AS builder
+FROM php:8.3-fpm AS base
 
 LABEL author="Jan Kozak <galvani78@gmail.com>"
-
-WORKDIR /app
-
-VOLUME /app/var/
 
 # Build argument to determine the role of the container
 ARG CONTAINER_ROLE=web
@@ -45,11 +41,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     make \
     && rm -rf /var/lib/apt/lists/*
-
-# Install supervisor
-RUN apt-get update && apt-get install -y supervisor
-RUN mkdir -p /var/log/supervisor
-COPY docker/supervisord.conf /etc/supervisor/conf.d/messenger-worker.conf
 
 # Configure and install GD extension
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
@@ -102,24 +93,37 @@ COPY --link ./docker/php-fpm.d/www.conf /usr/local/etc/php-fpm.d/www.conf
 COPY ./docker/php-fpm.d/www.conf /usr/local/etc/php-fpm.d/www.conf
 
 COPY ./docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
-COPY ./docker/crontab /etc/crontabs/www-data
-RUN chmod +x /usr/local/bin/docker-entrypoint
 
 # Now copy the application code
 COPY --chown=www-data:www-data . /app
-RUN ls -asl /app
+RUN chmod +x /usr/local/bin/docker-entrypoint
 
 RUN cd /app && composer install --no-dev --optimize-autoloader
+ENV MAX_REQUESTS=1000
+ENTRYPOINT ["docker-entrypoint"]
 
-RUN npm ci --prefer-offline --no-audit && \
+WORKDIR /app
+
+FROM base AS web
+
+RUN cd /app && npm ci --prefer-offline --no-audit && \
     npx patch-package && \
     bin/console mautic:assets:generate
 
-ENV MAX_REQUESTS=1000
-ENV MAUTIC_CUSTOM_DEV_HOSTS='["localhost","127.0.0.1","172.18.0.1","172.19.0.1"]'
+RUN apt-get update && apt-get install -y nginx
+RUN rm -f /etc/nginx/sites-enabled/default
+COPY ./docker/nginx/nginx.conf /etc/nginx/sites-enabled/default
 
-EXPOSE 9000
-ENTRYPOINT ["docker-entrypoint"]
-CMD ["php-fpm"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD curl -f http://localhost/ || exit 1
+EXPOSE 80
+
+FROM base AS worker
+
+COPY ./docker/crontab /etc/crontabs/www-data
+
+# Install supervisor
+RUN apt-get update && apt-get install -y supervisor
+RUN mkdir -p /var/log/supervisor
+COPY --link ./docker/supervisord.conf /etc/supervisor/conf.d/messenger-worker.conf
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 || exit 1

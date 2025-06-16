@@ -191,6 +191,7 @@ $container->loadFromExtension('doctrine', [
 $container->loadFromExtension('doctrine_migrations', [
     'migrations_paths' => [
         'Mautic\\Migrations' => '%mautic.application_dir%/app/migrations',
+        'Ormine\\Migrations' => '%mautic.application_dir%/migrations',
     ],
     'storage' => [
         'table_storage' => [
