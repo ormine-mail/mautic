@@ -1,7 +1,6 @@
 #!/bin/sh
 set -e
 
-# Database configuration from environment variables
 DB_HOST=${MAUTIC_DB_HOST}
 DB_PORT=${MAUTIC_DB_PORT}
 DB_USER=${MAUTIC_DB_USER}
@@ -23,6 +22,48 @@ is_mautic_installed() {
   MYSQL_PWD="$DB_PASS" mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "$DB_NAME" -e "SHOW TABLES LIKE 'users';" 2>/dev/null | grep -q 'users'
   return $?
 }
+
+# Check whether local.php is present, if not and mautic database is populated we need to create /app/config/local.php
+create_local_config() {
+  if [ ! -f /app/config/local.php ] && is_mautic_installed; then
+    echo "Database exists but local.php is missing. Creating config file..."
+
+    # Generate a random secret key if not provided
+    if [ -z "${MAUTIC_SECRET_KEY}" ]; then
+      SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
+    else
+      SECRET_KEY="${MAUTIC_SECRET_KEY}"
+    fi
+
+    # Create the local.php file
+    cat > /app/config/local.php << EOF
+<?php
+\$parameters = array(
+	'db_driver' => '${DB_DRIVER}',
+	'db_host' => '${DB_HOST}',
+	'db_host_ro' => null,
+	'db_table_prefix' => '${DB_PREFIX:+\'$DB_PREFIX\'}',
+	'db_port' => '${DB_PORT}',
+	'db_name' => '${DB_NAME}',
+	'db_user' => '${DB_USER}',
+	'db_password' => '${DB_PASS}',
+	'db_backup_tables' => false,
+	'db_backup_prefix' => 'bak_',
+	'secret_key' => '${SECRET_KEY}',
+	'site_url' => '${SITE_URL}',
+	'mailer_dsn' => '${MAILER_DSN}'
+);
+EOF
+
+    echo "Successfully created /app/config/local.php"
+    echo "Secret: ${SECRET_KEY}"
+
+    # Ensure proper permissions for the config file
+    chown www-data:www-data /app/config/local.php
+    chmod 660 /app/config/local.php
+  fi
+}
+
 
 # Count tables in database directly with MySQL
 count_tables() {
@@ -156,33 +197,28 @@ fix_permissions() {
   # Create directories if they don't exist
   mkdir -p /app/var/cache /app/var/logs /app/var/tmp /app/var/spool /app/media/files /app/media/images
 
-  chmod 664 /app/config/local.php
-  # Only fix permissions if they're not already set correctly
-  current_owner=$(stat -c "%U:%G" /app/var 2>/dev/null || echo "none:none")
-  if [ "$current_owner" != "www-data:www-data" ]; then
-    echo "Setting correct ownership for mounted volumes..."
+  chgrp -R www-data /app/config
+  chmod -R 775 /app/config
+  echo "Setting correct ownership for mounted volumes..."
 
-    # Ensure proper permissions
-    chmod 775 /app
-    chmod 775 /app/var
-    chmod 775 /app/var/cache
-    chmod 775 /app/var/logs
-    chmod 775 /app/var/tmp
-    chmod 775 /app/var/spool
-    chmod 775 /app/media
-    chmod 775 /app/media/files
-    chmod 775 /app/media/images
+  # Ensure proper permissions
+  chmod 775 /app
+  chmod 775 /app/var
+  chmod 775 /app/var/cache
+  chmod 775 /app/var/logs
+  chmod 775 /app/var/tmp
+  chmod 775 /app/var/spool
+  chmod 775 /app/media
+  chmod 775 /app/media/files
+  chmod 775 /app/media/images
 
-    # Change ownership selectively
-    chown -v www-data:www-data /app/var
-    chown -v www-data:www-data /app/var/cache
-    chown -v www-data:www-data /app/var/logs
-    chown -v www-data:www-data /app/var/tmp
-    chown -v www-data:www-data /app/media
-  else
-    echo "Permissions already correctly set, skipping..."
-  fi
-   echo "Permission checking/fixing completed."
+  # Change ownership selectively
+  chown -v www-data:www-data /app/var
+  chown -v www-data:www-data /app/var/cache
+  chown -v www-data:www-data /app/var/logs
+  chown -v www-data:www-data /app/var/tmp
+  chown -v www-data:www-data /app/var/spool
+  chown -v www-data:www-data /app/media
 }
 
 # Warm up cache
@@ -247,43 +283,31 @@ fi
 echo "Installing Composer dependencies..."
 composer install --no-dev --optimize-autoloader --no-scripts
 
-#
-## Then install NPM dependencies
-#echo "Installing NPM dependencies..."
-#npm ci --prefer-offline --no-audit && \
-#  npx patch-package
-#
-#echo "Dependencies installation completed."
-
-# Check if Mautic is installed
+# Check if Mautic is installed and create local.php if needed
 if is_mautic_installed; then
-  echo "Mautic is already installed, running migrations..."
+  echo "Mautic is already installed, checking local.php file..."
+  create_local_config
 else
   echo "Mautic is not installed, running initial installation..."
   install_mautic
 fi
 
-run_migrations
+if [ "$CONTAINER_ROLE" = "web" ]; then
+  echo "Running migrations..."
+  run_migrations
+fi
+
 warm_cache
 
 echo "Installing Mautic plugins..."
 php bin/console mautic:plugins:install
 
-# Generate Mautic assets (after all dependencies are installed)
-#echo "Generating Mautic assets..."
-#bin/console mautic:assets:generate
-
-# Warm up the cache
-
-
-# Ensure correct permissions
 fix_permissions
 
 echo "Container Role: $CONTAINER_ROLE"
 echo "Current directory: $(pwd)"
 echo "PHP Version: $(php -v | head -n 1)"
 
-# First, let's make sure no role-specific configuration is active
 if [ -L /usr/local/etc/php/conf.d/99-mautic-role.ini ]; then
   rm -f /usr/local/etc/php/conf.d/99-mautic-role.ini
 fi
@@ -299,11 +323,18 @@ elif [ "$CONTAINER_ROLE" = "web" ]; then
     # Start PHP-FPM in foreground
     exec php-fpm -F
 elif [ "$CONTAINER_ROLE" = "cron" ]; then
+    echo "Setting up cron environment..."
+    env > /etc/environment
+
+    crontab /etc/cron.d/mautic-cron
+
+    echo "Installed crontab:"
+    crontab -l
+
     echo "Starting cron instance in foreground..."
-    exec crond -f -l 8
+    exec cron -f -l 8
 else
     echo "Unknown CONTAINER_ROLE: $CONTAINER_ROLE"
     echo "Expected values: web, worker, cron"
     exit 1
 fi
-

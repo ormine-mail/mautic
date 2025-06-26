@@ -98,7 +98,15 @@ COPY ./docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
 COPY --chown=www-data:www-data . /app
 RUN chmod +x /usr/local/bin/docker-entrypoint
 
-RUN cd /app && composer install --no-dev --optimize-autoloader
+RUN cd /app && composer install --no-dev --optimize-autoloader --no-scripts
+RUN cd /app && composer require \
+    datto/json-rpc-http:^1.0 \
+    minwork/array:^1.0 \
+    sentry/sentry:^3.0 \
+    sentry/sentry-symfony:^4.0 \
+    --no-scripts --no-interaction
+
+
 ENV MAX_REQUESTS=1000
 ENTRYPOINT ["docker-entrypoint"]
 
@@ -119,7 +127,9 @@ EXPOSE 80
 
 FROM base AS worker
 
-COPY ./docker/crontab /etc/crontabs/www-data
+COPY ./docker/crontab /etc/cron.d/mautic-cron
+RUN chmod 0644 /etc/cron.d/mautic-cron
+RUN crontab /etc/cron.d/mautic-cron
 
 # Install supervisor
 RUN apt-get update && apt-get install -y supervisor

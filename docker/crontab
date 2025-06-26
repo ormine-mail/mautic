@@ -1,6 +1,26 @@
-* * * * * cd /app && php bin/console mautic:segments:update > /proc/1/fd/1 2>/proc/1/fd/2
-* * * * * cd /app && php bin/console mautic:campaigns:rebuild > /proc/1/fd/1 2>/proc/1/fd/2
-* * * * * cd /app && php bin/console mautic:campaigns:trigger > /proc/1/fd/1 2>/proc/1/fd/2
-0 * * * * cd /app && php bin/console mautic:emails:send > /proc/1/fd/1 2>/proc/1/fd/2
-0 4 * * * cd /app && php bin/console mautic:maintenance:cleanup --days-old=365 > /proc/1/fd/1 2>/proc/1/fd/2
-0 5 * * * cd /app && php bin/console mautic:import > /proc/1/fd/1 2>/proc/1/fd/2
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+*/2 * * * * echo "Cron is working at $(date)" > /proc/1/fd/1 2>/proc/1/fd/2
+
+# Core Mautic scheduled tasks - with locking to prevent overlap
+* * * * * cd /app && flock -n /tmp/mautic-segments.lock -c "php bin/console mautic:segments:update" > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && flock -n /tmp/mautic-campaigns-rebuild.lock -c "php bin/console mautic:campaigns:rebuild" > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && flock -n /tmp/mautic-campaigns-trigger.lock -c "php bin/console mautic:campaigns:trigger" > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && flock -n /tmp/mautic-campaigns-update.lock -c "php bin/console mautic:campaigns:update" > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && flock -n /tmp/mautic-broadcasts.lock -c "php bin/console mautic:broadcasts:send" > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && flock -n /tmp/mautic-import.lock -c "php bin/console mautic:import" > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && flock -n /tmp/mautic-webhooks.lock -c "php bin/console mautic:webhooks:process" > /proc/1/fd/1 2>/proc/1/fd/2
+* * * * * cd /app && flock -n /tmp/mautic-custom-field.lock -c "php bin/console mautic:custom-field:create-column" > /proc/1/fd/1 2>/proc/1/fd/2
+
+# Hourly tasks
+0 * * * * cd /app && flock -n /tmp/mautic-reports.lock -c "php bin/console mautic:reports:scheduler" > /proc/1/fd/1 2>/proc/1/fd/2
+
+# Daily tasks
+0 4 * * * cd /app && flock -n /tmp/mautic-cleanup.lock -c "php bin/console mautic:maintenance:cleanup --days-old=365" > /proc/1/fd/1 2>/proc/1/fd/2
+
+# Weekly tasks (Sunday at midnight)
+0 0 * * 0 cd /app && flock -n /tmp/mautic-iplookup.lock -c "php bin/console mautic:iplookup:download" > /proc/1/fd/1 2>/proc/1/fd/2
+0 0 * * 0 cd /app && flock -n /tmp/mautic-donotsell.lock -c "php bin/console mautic:donotsell:download" > /proc/1/fd/1 2>/proc/1/fd/2
+0 0 * * 0 cd /app && flock -n /tmp/mautic-maxmind.lock -c "php bin/console mautic:max-mind:purge" > /proc/1/fd/1 2>/proc/1/fd/2
+
+# Custom integration sync (every 10 minutes)
+*/10 * * * * cd /app && flock -n /tmp/mautic-otys-sync.lock -c "php bin/console mautic:integrations:sync otys --start-datetime=\"-15 minute\"" > /proc/1/fd/1 2>/proc/1/fd/2
