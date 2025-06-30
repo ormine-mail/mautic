@@ -22,7 +22,11 @@
     },
   "require": {
     "composer/installers": "^1.11",
-    "mautic/core-lib": "^5.0"
+    "datto/json-rpc-http": "^1.0",
+    "mautic/core-lib": "^5.0",
+    "minwork/array": "^1.0",
+    "sentry/sentry": "^3.0",
+    "sentry/sentry-symfony": "^4.0"
   },
   "require-dev": {
     "codeception/codeception": "^5.1",
